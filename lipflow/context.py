@@ -43,7 +43,7 @@ def extract_names(*texts: str, limit: int = 30) -> list[str]:
     seen, out = set(), []
     for t in texts:
         for sent in re.split(r"[.!?\n|•·—\-–:]+", t or ""):
-            toks = re.findall(r"[A-Za-z][A-Za-z'\-]+", sent)
+            toks = re.findall(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё'\-]+", sent)
             for i, w in enumerate(toks):
                 if not w[0].isupper() or w.isupper() and len(w) > 4:
                     continue

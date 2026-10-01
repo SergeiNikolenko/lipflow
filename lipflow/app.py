@@ -25,7 +25,7 @@ from .hotkey import KEYS, PushToTalk
 from .hud import HUD, symbol
 from AppKit import NSFontWeightRegular
 from .paste import copy_text, paste_text
-from .vsr import LipReader
+from .vsr import LipReader, current_lang, make_reader
 
 from .paths import HOME
 from .paths import WHO
@@ -50,6 +50,7 @@ PREVIEW_EVERY = 0.45
 KEEP_CLIPS = 100  # recent dictation clips kept (96x96 grayscale mouth crops, no audio)
 TAIL_SECONDS = 0.4  # keep filming after release: the last word needs the frames after it
 JOIN_WINDOW = 45.0  # dictations this close together get a separating space
+WHISPER_MIN_RMS = 0.003  # quieter than this is a silent room, not a whisper (Russian whisper mode)
 
 
 @dataclass
@@ -61,6 +62,7 @@ class Options:
     paste: bool = True
     live_preview: bool = True
     onboard: bool = False
+    lang: "str | None" = None  # 'ru' | 'en'; None = settings.json, else Russian
 
 
 def ui(fn, *args, **kw):
@@ -74,7 +76,9 @@ class Lipflow(NSObject):
             return None
         self.opts = opts
         self.reader: LipReader | None = None
-        self.cleaner = Cleaner(opts.backend)
+        self.settings = load_settings()
+        self.lang = opts.lang or current_lang(self.settings)
+        self.cleaner = Cleaner(opts.backend, lang=self.lang)
         self.jobs: "queue.Queue" = queue.Queue()
         self.session = 0          # bumps on every start/cancel so stale previews are dropped
         self.preview_busy = False
@@ -91,7 +95,6 @@ class Lipflow(NSObject):
         self.onboarding_text = ""
         self.setup = None
         self.loading = True
-        self.settings = load_settings()
         cam = opts.camera if opts.camera != "auto" else self.settings.get("camera", "auto")
         if opts.key == "right_option" and self.settings.get("key"):
             opts.key = self.settings["key"]
@@ -137,6 +140,7 @@ class Lipflow(NSObject):
         self.state_item = self._item(menu, "Loading model…", None, icon="hourglass")
         key_name = self.opts.key.replace("_", " ").title()
         self._item(menu, f"Hold {key_name} to dictate, double-tap for hands-free", None, icon="keyboard")
+        self._item(menu, "Language: Russian" if self.lang == "ru" else "Language: English", None, icon="globe")
         self._item(menu, f"Cleanup: {self.cleaner.describe()}", None, icon="text.badge.checkmark")
         n = len(self.cleaner.personal.phrases)
         self._item(menu, f"Personalised from {n:,} of your phrases" if n else
@@ -365,7 +369,9 @@ class Lipflow(NSObject):
                 elif job[0] == "whisper":
                     self._load_whisper()
                 elif job[0] == "reload":  # e.g. face model reset from Settings
-                    self.reader = LipReader(beam_size=self.opts.beam)
+                    self.reader = make_reader(self.lang, beam_size=self.opts.beam)
+                    if self.lang == "ru" and self.av_reader is not None:
+                        self.av_reader = self.reader
                     self.reader.warmup()
             except Exception as e:
                 import traceback
@@ -378,7 +384,12 @@ class Lipflow(NSObject):
     @objc.python_method
     def _load(self):
         t = time.time()
-        self.reader = LipReader(beam_size=self.opts.beam)
+        if self.lang == "ru":
+            from . import ru
+            if not ru.available():
+                ui(self.hud.set_text, "Downloading the Russian lip-reading model (1.5 GB)…")
+                ru.download()
+        self.reader = make_reader(self.lang, beam_size=self.opts.beam)
         self.reader.warmup()
         if self.cleaner.backend == "local":
             ui(self.hud.set_text, "Loading the text-cleanup model…")
@@ -407,6 +418,14 @@ class Lipflow(NSObject):
     @objc.python_method
     def _load_whisper(self):
         """Model thread: download (first time, 1.8 GB) and load the audio-visual model."""
+        if self.lang == "ru":  # the Russian model reads lips + audio itself: nothing to load
+            if self.reader is None:  # jobs run in order, so "load" has normally finished already
+                return
+            self.av_reader = self.reader
+            self.av_reader.warmup_av()
+            print("[lipflow] whisper mode ready (lips + audio, Russian)")
+            ui(self.hud.show, "done", "Whisper mode on", "Whisper or speak softly while you mouth the words", 3.0)
+            return
         from . import av
         if not av.available():
             ui(self.hud.show, "reading", "Whisper mode", "Downloading the audio-visual model (1.8 GB)…")
@@ -431,6 +450,11 @@ class Lipflow(NSObject):
         wave = segment(rec.audio, ts[0], rois.shape[0])
         if wave is None:
             return None
+        rms = float(np.sqrt(np.mean(np.square(wave))))
+        if self.lang == "ru" and rms < WHISPER_MIN_RMS:
+            # the Russian model normalises every audio frame, so room noise would read as words
+            print(f"[lipflow] no whisper heard (rms {rms:.4f}), using lips only")
+            return None
         return self.av_reader.beam_search(self.av_reader.encode_av(rois, wave), nbest=5)
 
     @objc.python_method
@@ -449,7 +473,7 @@ class Lipflow(NSObject):
             return
         text = self.reader.greedy(self.reader.encode(rois))
         if self.session == session and text:
-            ui(self.hud.set_text, text.lower())
+            ui(self.hud.set_text, text if self.lang == "ru" else text.lower())
     @objc.python_method
     def _final(self, rec: Recording):
         t0 = time.time()
@@ -491,7 +515,7 @@ class Lipflow(NSObject):
             print(f"[lipflow] {rec.duration:.1f}s clip: nothing read")
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
             return
-        ui(self.hud.set_text, candidates[0].lower())
+        ui(self.hud.set_text, candidates[0] if self.lang == "ru" else candidates[0].lower())
         ctx = getattr(self, "ctx", None)
         text = self.cleaner(candidates, context=" ".join(self.context[-3:]), names=ctx.names if ctx else None)
         t_all = time.time() - t0
@@ -539,12 +563,12 @@ class Lipflow(NSObject):
         """Onboarding: personal LM (if phrases) then face adaptation with a held-out check."""
         import random as _r
         from .bench import wer
-        from .onboarding import N_HELD_OUT, saved_clips
+        from .onboarding import N_HELD_OUT, is_russian, saved_clips
         from .personal import PHRASES
         from .train_vsr import finetune, save
         self.loading = True
         note = ""
-        if os.path.exists(PHRASES):
+        if os.path.exists(PHRASES) and self.lang == "en":  # the Russian model has no separate LM
             ob.report(3, "Learning how you talk from your phrases…")
             from .train_lm import train as train_lm
             try:
@@ -554,8 +578,8 @@ class Lipflow(NSObject):
             except Exception as e:
                 print(f"[lipflow] train-lm failed: {e}")
         from . import corrections
-        clips = saved_clips()
-        learned = corrections.load_all()
+        clips = saved_clips(self.lang)
+        learned = [c for c in corrections.load_all() if is_russian(c["text"]) == (self.lang == "ru")]
         if len(clips) < N_HELD_OUT + 6:
             ob.finished(0, None, False, "Not enough practice clips to train on. Run setup again from the menu.")
             self.loading = False
@@ -564,7 +588,7 @@ class Lipflow(NSObject):
         # held out: practice clips only (their text is certain); corrections only ever train
         test, train = clips[:N_HELD_OUT], clips[N_HELD_OUT:] + learned
         ob.report(15, f"Measuring the standard model on {len(test)} of your sentences…")
-        base = LipReader(beam_size=self.opts.beam, personal=False)
+        base = make_reader(self.lang, beam_size=self.opts.beam, personal=False)
 
         def score(reader):
             e = n = 0
@@ -583,8 +607,10 @@ class Lipflow(NSObject):
         if kept:
             save(base)
         del base
-        self.reader = LipReader(beam_size=self.opts.beam)
+        self.reader = make_reader(self.lang, beam_size=self.opts.beam)
         self.reader.warmup()
+        if self.lang == "ru" and self.av_reader is not None:
+            self.av_reader = self.reader
         self.loading = False
         print(f"[lipflow] onboarding: held-out WER {before:.1%} → {after:.1%} ({'kept' if kept else 'discarded'})")
         self.settings["training"] = {"before": before, "after": after, "kept": kept, "clips": len(clips),

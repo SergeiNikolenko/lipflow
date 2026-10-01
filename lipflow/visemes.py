@@ -49,6 +49,8 @@ def is_word(w: str) -> bool:
         except OSError:
             _DICT = set()
     w = w.lower().replace("'", "")
+    if re.search(r"[а-яё]", w):
+        return True  # no Russian dictionary: never snap Russian words to names
     if w in _DICT:
         return True
     # the dictionary has no inflections: try stems (planks→plank, served→serve, stopped→stop)

@@ -25,6 +25,9 @@ get $HF/Amanvir/lm_en_subword/resolve/main/model.json  models/lm/model.json
 get $HF/Amanvir/lm_en_subword/resolve/main/model.pth   models/lm/model.pth
 # SentencePiece tokenizer for the LM (needed to train on your phrases and your face)
 get https://github.com/mpc001/auto_avsr/raw/main/spm/unigram/unigram5000.model models/lm/unigram5000.model
+# Russian: AV-HuBERT MuAViC-ru (lips, or lips + whisper), CC-BY-NC 4.0, ~1.5 GB
+RU=$HF/nguyenvulebinh/AV-HuBERT-MuAViC-ru/resolve/main
+for f in config.json vocab.json sentencepiece.bpe.model model.safetensors; do get $RU/$f models/ru/$f; done
 # MediaPipe face landmarker
 get https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task \
     models/face_landmarker.task
@@ -38,6 +41,8 @@ fi
 
 # The small on-device cleanup model (~350 MB), so the first launch doesn't stall on it
 uv run python -c "from mlx_lm import load; load('mlx-community/Qwen3-0.6B-4bit')" >/dev/null 2>&1 && echo "✓ cleanup model"
+# Russian cleanup needs a slightly larger one (~1 GB)
+uv run python -c "from mlx_lm import load; load('mlx-community/Qwen3-1.7B-4bit')" >/dev/null 2>&1 && echo "✓ Russian cleanup model"
 
 # The app bundle: its own permissions, Spotlight/Launchpad, Login Items
 if [[ "${1:-}" != "--no-app" ]]; then

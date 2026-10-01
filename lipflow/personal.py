@@ -22,7 +22,7 @@ from . import vocab
 from .paths import HOME as DIR
 PHRASES = os.path.join(DIR, "phrases.txt")
 WISPR_DIR = os.path.expanduser("~/Library/Application Support/Wispr Flow")
-_WORD = re.compile(r"[a-z0-9']+")
+_WORD = re.compile(r"[^\W_]+(?:'[^\W_]+)*")
 
 
 def words_of(text: str) -> list[str]:
@@ -118,7 +118,7 @@ def suggest_words(phrases: list[str], min_count: int = 3) -> list[str]:
     """Words you capitalise mid-sentence again and again (names, products) → words.txt."""
     caps, lower = Counter(), Counter()
     for p in phrases:
-        toks = re.findall(r"[A-Za-z][A-Za-z0-9'\-]+", p)
+        toks = re.findall(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9'\-]+", p)
         for i, w in enumerate(toks):
             if w[0].isupper() and i > 0 and not w.isupper() and w.lower() not in ("i", "i'm", "i'll", "i've", "i'd"):
                 caps[w] += 1

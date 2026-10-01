@@ -12,3 +12,8 @@ Lipflow bundles code from these projects:
 
 Model weights (downloaded by setup.sh, not redistributed here) are the Auto-AVSR LRS3 models; the
 LRS3 dataset is licensed for non-commercial research use, so treat the weights the same way.
+
+Russian: lipflow/ru.py re-implements the AV-HuBERT sequence-to-sequence architecture (Shi et al.,
+Meta; MuAViC, Anwar et al. 2023) following the Hugging Face port by Binh Nguyen
+(github.com/nguyenvulebinh/AV-HuBERT-S2S). Its weights, nguyenvulebinh/AV-HuBERT-MuAViC-ru, are
+released under CC-BY-NC 4.0: non-commercial use only.

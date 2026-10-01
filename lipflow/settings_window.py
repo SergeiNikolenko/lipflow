@@ -16,7 +16,11 @@ from Foundation import NSObject
 
 from .hud import ACCENT, GREEN, _glass, _rgb, symbol
 from .onboarding import GlassWindow, _text
-from .paths import HOME, PERSONAL_VSR
+from .paths import HOME, PERSONAL_VSR, PERSONAL_VSR_RU
+
+
+def _face_model(app) -> str:
+    return PERSONAL_VSR_RU if getattr(app, "lang", "ru") == "ru" else PERSONAL_VSR
 
 SW, SH = 560, 700
 
@@ -87,14 +91,14 @@ class Settings(NSObject):
         # -- training ------------------------------------------------------------------
         y = SH - 110
         _text(p, NSMakeRect(36, y, 400, 18), "TRAINING ON YOUR FACE", 11, NSFontWeightSemibold, color=_rgb(ACCENT))
-        n = len(saved_clips())
+        n = len(saved_clips(getattr(self.app, "lang", None)))
         t = s.get("training")
         if t:
             line = (f"{t['clips']} practice clips. Last training ({time.strftime('%b %-d', time.localtime(t['at']))}): "
                     f"words read correctly on held-out sentences {1 - t['before']:.0%} → {1 - t['after']:.0%}"
                     + ("" if t["kept"] else ", not better, so the standard model is used."))
         else:
-            line = f"{n} practice clips so far." + (" Not trained yet." if not os.path.exists(PERSONAL_VSR) else "")
+            line = f"{n} practice clips so far." + (" Not trained yet." if not os.path.exists(_face_model(self.app)) else "")
         from . import corrections
         nc = corrections.count()
         if nc:
@@ -104,7 +108,7 @@ class Settings(NSObject):
               "Each round is 24 new sentences (about 5 minutes) and it retrains on everything you've recorded. "
               "More rounds keep improving it.", 12, alpha=0.55)
         p.addSubview_(_capsule(self, "Practice & train more", "trainMore:", NSMakeRect(36, y - 132, 220, 36), True))
-        if os.path.exists(PERSONAL_VSR):
+        if os.path.exists(_face_model(self.app)):
             p.addSubview_(_capsule(self, "Reset face model", "resetFace:", NSMakeRect(270, y - 132, 170, 36)))
 
         # -- general -------------------------------------------------------------------
@@ -171,8 +175,8 @@ class Settings(NSObject):
         self.app.show_setup(start_at="practice")
 
     def resetFace_(self, sender):
-        if os.path.exists(PERSONAL_VSR):
-            os.remove(PERSONAL_VSR)
+        if os.path.exists(_face_model(self.app)):
+            os.remove(_face_model(self.app))
         self.app.settings.pop("training", None)
         self._save()
         self.app.jobs.put(("reload",))

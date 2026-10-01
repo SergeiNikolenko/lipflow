@@ -72,30 +72,68 @@ HARVARD = [
 ]
 
 
-def practice_sentences(n: int = N_SENTENCES) -> list[str]:
+# Russian practice set: short everyday sentences covering the lip shapes Russian separates poorly
+# (п/б/м, ф/в, т/д/н/л, с/з/ц, ш/ж/щ/ч, к/г/х) and the rounded vowels о/у/ы.
+RUSSIAN = [
+    "Мама мыла раму тёплой водой", "Папа принёс большую банку малинового варенья",
+    "Встретимся завтра в восемь утра у метро", "Пожалуйста, пришли мне файл до обеда",
+    "Фёдор взял велосипед и поехал на дачу", "Вчера вечером шёл сильный холодный дождь",
+    "Давай обсудим план на следующую неделю", "Наташа нашла новую работу недалеко от дома",
+    "Тихо падает снег за окном", "Дети долго играли в саду под деревьями",
+    "Сегодня солнечно, поэтому пойдём гулять в парк", "Сколько стоит билет до Санкт-Петербурга",
+    "Зайди, пожалуйста, в магазин за хлебом и сыром", "Цветы на окне снова нужно полить",
+    "Шесть шустрых мышат шуршат в шалаше", "Жёлтый жук жужжит над жасмином",
+    "Щенок щиплет щётку и пищит", "Чай с лимоном помогает от простуды",
+    "Кошка гуляет по крыше старого гаража", "Голубое небо отражается в глубоком озере",
+    "Хорошо, я перезвоню тебе через час", "Книга лежит на верхней полке шкафа",
+    "Уточни, пожалуйста, во сколько начинается встреча", "Ужин будет готов через пятнадцать минут",
+    "Мы успели на последний поезд", "Он быстро ответил на все вопросы",
+    "Вода в реке была очень холодной", "Я думаю, что проект почти готов",
+    "Отправь отчёт руководителю до пятницы", "Надо купить молоко, яйца и масло",
+    "Бабушка испекла пирог с яблоками", "Мой брат учится в университете",
+    "Поверни направо после светофора", "Мне нравится слушать музыку по вечерам",
+    "Завтра обещают ветер и мокрый снег", "Посмотри, какая красивая луна",
+    "В понедельник у нас важная презентация", "Это очень хорошая новость для всех",
+    "Пусть он позвонит мне, когда освободится", "Мы переехали в новую квартиру весной",
+    "Наша команда выиграла финальный матч", "Купи, пожалуйста, билеты в кино на субботу",
+    "Врач посоветовал больше гулять и меньше работать", "Поезд прибывает на третий путь",
+    "Можно мне чашку кофе без сахара", "Я забыл зонтик в машине",
+    "Лиса быстро убежала в густой лес", "Давай поужинаем сегодня вместе",
+]
+
+
+def is_russian(text: str) -> bool:
+    return bool(re.search(r"[А-Яа-яЁё]", text or ""))
+
+
+def practice_sentences(n: int = N_SENTENCES, lang: str = "en") -> list[str]:
     """Half your own everyday sentences (from an imported Wispr Flow history: 5–12 words, no digits)
     for your real vocabulary, half Harvard sentences for even coverage of lip shapes; all Harvard
-    if there's no history. Shuffled together."""
+    if there's no history. Shuffled together. Russian uses its own set and your Russian phrases."""
     from .personal import PHRASES
     mine = []
     if os.path.exists(PHRASES):
         for line in open(PHRASES):
             for s in re.split(r"(?<=[.!?])\s+", line.strip()):
                 w = s.split()
-                if 5 <= len(w) <= 12 and not re.search(r"\d|http|@|/", s):
+                if 5 <= len(w) <= 12 and not re.search(r"\d|http|@|/", s) and is_russian(s) == (lang == "ru"):
                     mine.append(s.rstrip(".!?,"))
     random.shuffle(mine)
     own = list(dict.fromkeys(mine))[:n // 2]
-    harvard = random.sample(HARVARD, n - len(own))
+    pool = RUSSIAN if lang == "ru" else HARVARD
+    harvard = random.sample(pool, min(n - len(own), len(pool)))
     out = own + harvard
     random.shuffle(out)
     return out
 
 
-def saved_clips() -> list[dict]:
+def saved_clips(lang: "str | None" = None) -> list[dict]:
+    """Practice clips; with lang, only the ones in that language (told apart by their script)."""
     items = []
     for p in sorted(glob.glob(os.path.join(CLIPS, "*.npz"))):
         d = np.load(p, allow_pickle=True)
+        if lang and is_russian(str(d["text"])) != (lang == "ru"):
+            continue
         items.append({"rois": d["rois"], "text": str(d["text"]), "path": p})
     return items
 
@@ -351,8 +389,11 @@ class Onboarding(NSObject):
         os.makedirs(CLIPS, exist_ok=True)
         # Every visit is a fresh round of new sentences; clips from earlier rounds are kept and the
         # model retrains on all of them, so practising again keeps improving it.
-        done = {c["text"] for c in saved_clips()}
-        self.sentences = [x for x in practice_sentences(N_SENTENCES * 2) if x not in done][:N_SENTENCES]
+        lang = getattr(self.app, "lang", "en")
+        done = {c["text"] for c in saved_clips(lang)}
+        self.sentences = [x for x in practice_sentences(N_SENTENCES * 2, lang) if x not in done][:N_SENTENCES]
+        if len(self.sentences) < N_SENTENCES:  # every sentence practised already: go round again
+            self.sentences += practice_sentences(N_SENTENCES - len(self.sentences), lang)
         self.i = 0
         prior = len(done)
         p = self._new_page("quote.bubble", "Mouth each sentence",

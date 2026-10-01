@@ -162,3 +162,20 @@ class LipReader:
 
     def warmup(self):
         self.read(np.zeros((25, 96, 96), dtype=np.uint8))
+
+
+LANGS = ("ru", "en")
+
+
+def current_lang(settings: "dict | None" = None) -> str:
+    """Dictation language: LIPFLOW_LANG, else settings.json "language", else Russian."""
+    lang = os.environ.get("LIPFLOW_LANG") or (settings or {}).get("language") or "ru"
+    return lang if lang in LANGS else "ru"
+
+
+def make_reader(lang: str = "ru", **kw):
+    """The lip reader for a language: AV-HuBERT MuAViC-ru for Russian, Auto-AVSR LRS3 for English."""
+    if lang == "ru":
+        from .ru import RuReader
+        return RuReader(**kw)
+    return LipReader(**kw)

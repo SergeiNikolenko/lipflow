@@ -23,7 +23,7 @@ KEEP = 500
 
 
 def _words(t: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", t.lower())
+    return re.findall(r"[^\W_]+(?:'[^\W_]+)*", t.lower())
 
 
 def inserted_span(before: str, after: str) -> str:

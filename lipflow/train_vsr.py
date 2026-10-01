@@ -21,7 +21,11 @@ import torch.nn.functional as F
 
 from .vsr import MODELS, LipReader, _MEAN, _STD
 
-from .paths import PERSONAL_VSR
+from .paths import PERSONAL_VSR, PERSONAL_VSR_RU
+
+
+def _is_ru(reader) -> bool:
+    return getattr(reader, "lang", "en") == "ru"
 
 
 def _augment(rois: np.ndarray) -> torch.Tensor:
@@ -41,6 +45,8 @@ def _augment(rois: np.ndarray) -> torch.Tensor:
 
 
 def _targets(reader: LipReader, text: str) -> list[int]:
+    if _is_ru(reader):
+        return reader.targets(text)
     from .train_lm import Tok
     if not hasattr(reader, "_tok"):
         reader._tok = Tok(reader.token_list)
@@ -51,6 +57,8 @@ def _targets(reader: LipReader, text: str) -> list[int]:
 
 
 def clip_loss(reader: LipReader, x: torch.Tensor, ys: list[int]) -> torch.Tensor:
+    if _is_ru(reader):
+        return reader.clip_loss(x, ys)
     from espnet.nets.pytorch_backend.transformer.mask import subsequent_mask
     m = reader.model
     dev = reader.enc_device
@@ -71,6 +79,8 @@ def clip_loss(reader: LipReader, x: torch.Tensor, ys: list[int]) -> torch.Tensor
 
 
 def trainable(reader: LipReader, scope: str = "frontend"):
+    if _is_ru(reader):
+        return reader.trainable(scope)
     m = reader.model
     for p in m.parameters():
         p.requires_grad_(False)
@@ -97,8 +107,9 @@ def finetune(clips: list[dict], epochs: int = 6, lr: float = 1e-4, scope: str = 
     reader = reader or LipReader(beam_size=10, personal=False)
     # Training on the GPU: the decoder follows the encoder there for the teacher-forced pass
     reader.model.decoder.to(reader.enc_device)
-    reader.model.ctc.to(reader.enc_device)
-    reader.model.criterion.to(reader.enc_device) if hasattr(reader.model.criterion, "to") else None
+    if not _is_ru(reader):
+        reader.model.ctc.to(reader.enc_device)
+        reader.model.criterion.to(reader.enc_device) if hasattr(reader.model.criterion, "to") else None
     params = trainable(reader, scope)
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=1e-4)
     data = [(c["rois"], _targets(reader, c["text"])) for c in clips]
@@ -123,7 +134,8 @@ def finetune(clips: list[dict], epochs: int = 6, lr: float = 1e-4, scope: str = 
             on_epoch(ep + 1, epochs)
     reader.model.eval()
     reader.model.decoder.to(reader.device)
-    reader.model.ctc.to(reader.device)
+    if not _is_ru(reader):
+        reader.model.ctc.to(reader.device)
     for p in reader.model.parameters():
         p.requires_grad_(False)
     reader._trained_scope = scope
@@ -136,7 +148,10 @@ def save(reader: LipReader, scope: str = DEFAULT_SCOPE):
         prefixes.append("encoder.embed.")
     if scope == "frontend+encoder1":
         prefixes.append("encoder.encoders.0.")
+    path = PERSONAL_VSR
+    if _is_ru(reader):
+        prefixes, path = reader.trained_prefixes(scope), PERSONAL_VSR_RU
     state = {k: v.detach().cpu() for k, v in reader.model.state_dict().items() if k.startswith(tuple(prefixes))}
-    os.makedirs(os.path.dirname(PERSONAL_VSR), exist_ok=True)
-    torch.save(state, PERSONAL_VSR)
-    return PERSONAL_VSR
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    torch.save(state, path)
+    return path

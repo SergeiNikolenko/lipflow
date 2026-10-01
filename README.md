@@ -13,12 +13,38 @@ Everything runs locally on your Mac. An optional LLM pass fixes the words lip re
                      live preview: greedy CTC every 0.45 s while you talk
 ```
 
+## Russian (this fork)
+
+This fork dictates in **Russian** by default. The English Auto-AVSR model only knows English, so
+Russian uses Meta's AV-HuBERT fine-tuned on MuAViC-ru (about 49 hours of Russian TED talks),
+re-implemented in plain PyTorch in `lipflow/ru.py` and loaded from
+[nguyenvulebinh/AV-HuBERT-MuAViC-ru](https://huggingface.co/nguyenvulebinh/AV-HuBERT-MuAViC-ru)
+(1.5 GB, CC-BY-NC 4.0, downloaded by `setup.sh`). It uses the same mouth crops as the English model,
+so capture, the HUD, onboarding and face training work the same way.
+
+Set expectations honestly: Russian lip reading alone is rough. On a filmed Russian address, lips
+alone recover fragments ("…планы на будущее, конечно…"), while lips + audio read the sentence almost
+word for word. So for Russian:
+
+- Turn on **Settings → Whisper mode** and whisper softly while you mouth. The same model reads lips
+  + audio; nothing extra is downloaded. When the mic hears only room noise, Lipflow falls back to lips.
+- Do the practice round (24 Russian sentences, more rounds help). Face training on the Russian model
+  takes about 3 minutes on an M2 Pro.
+- For real sentence repair, give it Claude: put `ANTHROPIC_API_KEY=...` in
+  `~/Library/Application Support/Lipflow/env` (the app reads that file at launch). The default
+  on-device cleanup for Russian is Qwen3-1.7B (`LIPFLOW_LOCAL_MODEL` overrides it); it may only
+  make small, lip-lookalike spelling fixes.
+
+Switch language with `LIPFLOW_LANG=en` (in the `env` file or your shell), `"language": "en"` in
+`~/Library/Application Support/Lipflow/settings.json`, or `uv run lipflow --lang en`. Test on a file:
+`uv run lipflow file talk.mp4 --lang ru --start 60 --end 68 [--audio]`.
+
 ## Setup
 
 Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.
 
 ```sh
-git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
+git clone https://github.com/SergeiNikolenko/lipflow.git ~/code/lipflow
 cd ~/code/lipflow && ./setup.sh     # installs uv deps, ~1.2 GB of models, builds /Applications/Lipflow.app
 open /Applications/Lipflow.app
 ```

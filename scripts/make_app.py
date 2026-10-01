@@ -100,6 +100,9 @@ def build(dest_dir: str = "/Applications") -> str:
 # Lipflow launcher: runs the checkout at {ROOT}
 cd "{ROOT}" || exit 1
 export PYTHONUNBUFFERED=1 LIPFLOW_APP=1
+# Optional settings for the app (e.g. ANTHROPIC_API_KEY=..., LIPFLOW_LANG=en): one VAR=value per line
+ENV_FILE="$HOME/Library/Application Support/Lipflow/env"
+[ -f "$ENV_FILE" ] && {{ set -a; . "$ENV_FILE"; set +a; }}
 exec "{ROOT}/.venv/bin/python" -m lipflow "$@" >> "{log}" 2>&1
 """)
     os.chmod(launcher, 0o755)

@@ -26,6 +26,8 @@ def main(argv=None):
                    help="'auto' (the Mac's built-in camera), part of a camera's name, or a video file")
     r.add_argument("--copy-only", action="store_true", help="copy to the clipboard instead of pasting")
     r.add_argument("--no-preview", action="store_true", help="don't show live words while you talk")
+    r.add_argument("--lang", choices=["ru", "en"], default=None,
+                   help="dictation language (default: settings.json, else Russian); also LIPFLOW_LANG")
 
     f = sub.add_parser("file", help="lip-read a video file")
     f.add_argument("video")
@@ -33,6 +35,8 @@ def main(argv=None):
     f.add_argument("--end", type=float, default=None)
     f.add_argument("--beam", type=int, default=10)
     f.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic", "none"])
+    f.add_argument("--lang", choices=["ru", "en"], default=None)
+    f.add_argument("--audio", action="store_true", help="read lips + the clip's audio (Russian only)")
 
     sub.add_parser("doctor", help="check permissions, camera and model files")
     sub.add_parser("onboard", help="open the setup window (permissions, Wispr import, train on your face)")
@@ -47,13 +51,16 @@ def main(argv=None):
     cmd = args.cmd
 
     if cmd == "file":
+        from .app import load_settings
         from .offline import transcribe_file
-        from .vsr import LipReader
-        raw = transcribe_file(args.video, LipReader(beam_size=args.beam), args.start, args.end)
+        from .vsr import current_lang, make_reader
+        lang = args.lang or current_lang(load_settings())
+        raw = transcribe_file(args.video, make_reader(lang, beam_size=args.beam), args.start, args.end,
+                              audio=args.audio)
         print("raw:  ", raw)
         if args.cleanup != "none":
             from .cleanup import Cleaner
-            c = Cleaner(args.cleanup)
+            c = Cleaner(args.cleanup, lang=lang)
             print(f"text:  {c([raw])}   [{c.describe()}]")
     elif cmd == "import-wispr":
         from .personal import PHRASES, import_wispr, save_phrases

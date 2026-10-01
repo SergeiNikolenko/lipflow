@@ -31,7 +31,7 @@ def load_clip(path: str, tracker: FaceTracker, start: float = 0.0, end: float | 
 
 
 def transcribe_file(path: str, reader: LipReader | None = None, start: float = 0.0,
-                    end: float | None = None, save_rois: str | None = None) -> str:
+                    end: float | None = None, save_rois: str | None = None, audio: bool = False) -> str:
     tracker = FaceTracker()
     ts, grays, anchors = load_clip(path, tracker, start, end)
     tracker.close()
@@ -46,7 +46,11 @@ def transcribe_file(path: str, reader: LipReader | None = None, start: float = 0
             out.write(r)
         out.release()
     reader = reader or LipReader()
-    text, secs = reader.read(rois)
+    if audio and hasattr(reader, "read_av") and getattr(reader, "lang", "en") == "ru":
+        from .av import load_audio
+        text, secs = reader.read_av(rois, load_audio(path, start, ts[-1]))
+    else:
+        text, secs = reader.read(rois)
     found = sum(a is not None for a in anchors)
     print(f"[{len(rois)} frames @25fps, face in {found}/{len(anchors)}, decode {secs:.2f}s]")
     return text
