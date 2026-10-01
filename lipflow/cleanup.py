@@ -6,18 +6,32 @@ for "while in office"). An LLM that sees the top hypotheses plus what you dictat
 before can usually recover the intended sentence.
 
 Backends, first available wins:
-  claude  – ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) set
-  local   – a tiny on-device model via MLX (Qwen3-0.6B 4-bit, ~350 MB, ~0.2 s); LIPFLOW_LOCAL_MODEL
-  ollama  – a local Ollama server on :11434 (LIPFLOW_OLLAMA_MODEL, default qwen3:4b); only if chosen
+  chatgpt – your ChatGPT plan through the Lunori plugin's signed-in account (chatgpt.mjs); LIPFLOW_CHATGPT_MODEL
+  local   – a small on-device model via MLX (Qwen3 4-bit: 0.6B for English, 1.7B for Russian); LIPFLOW_LOCAL_MODEL
   basic   – offline casing + punctuation rules
 """
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
+import shutil
+import subprocess
+import threading
 
-import requests
+CHATGPT_HELPER = os.path.join(os.path.dirname(__file__), "chatgpt.mjs")
+
+
+def lunori_host() -> "str | None":
+    """The newest installed Lunori plugin's host dir (it holds the ChatGPT account client)."""
+    hits = glob.glob(os.path.expanduser("~/.codex/plugins/cache/*/lunori/*/host/account.mjs"))
+    return os.path.dirname(max(hits, key=os.path.getmtime)) if hits else None
+
+
+def node_bin() -> "str | None":
+    return shutil.which("node") or next((p for p in ("/opt/homebrew/bin/node", "/usr/local/bin/node")
+                                         if os.path.exists(p)), None)
 
 SYSTEM = """You fix the output of a lip-reading (visual speech recognition) model so it can be typed into the user's app, like a dictation tool.
 
@@ -252,36 +266,28 @@ class Cleaner:
         self.personal = Personal()
         if self.backend == "local":
             self.model = os.environ.get("LIPFLOW_LOCAL_MODEL", LOCAL_MODEL_RU if lang == "ru" else LOCAL_MODEL)
-        elif self.backend == "claude":
-            import anthropic
-            self._client = anthropic.Anthropic(timeout=8.0, max_retries=1)
-            self.model = os.environ.get("LIPFLOW_MODEL", "claude-opus-5-5")
-        elif self.backend == "ollama":
-            self.model = os.environ.get("LIPFLOW_OLLAMA_MODEL", "qwen3:4b")
-
-    @staticmethod
-    def _ollama_up() -> bool:
-        try:
-            return requests.get("http://127.0.0.1:11434/api/tags", timeout=0.4).ok
-        except requests.RequestException:
-            return False
+        elif self.backend == "chatgpt":
+            self._host, self._node = lunori_host(), node_bin()
+            self._proc: "subprocess.Popen | None" = None
+            self._lock = threading.Lock()
+            self.model = os.environ.get("LIPFLOW_CHATGPT_MODEL")
 
     def _pick(self, backend: str) -> str:
         if backend != "auto":
             return backend
-        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
-            return "claude"
+        if lunori_host() and node_bin():
+            return "chatgpt"
         try:
             import mlx_lm  # noqa: F401  (Apple Silicon only)
             return "local"
         except ImportError:
-            pass
-        if self._ollama_up():
-            return "ollama"
-        return "basic"
+            return "basic"
 
     def warmup(self):
-        """Load (and on first run download) the local model before the first dictation."""
+        """Load (and on first run download) the local model, or resolve the ChatGPT model, before the
+        first dictation."""
+        if self.backend == "chatgpt":
+            self.model = self._ask({"warmup": True, "model": self.model}).get("model") or self.model
         if self.backend == "local" and self._mlx is None:
             from mlx_lm import load
             self._mlx = load(self.model)
@@ -324,10 +330,8 @@ class Cleaner:
         try:
             if self.backend == "local":
                 out = self._local(candidates, context)
-            elif self.backend == "claude":
-                out = self._claude(candidates, context)
-            elif self.backend == "ollama":
-                out = self._ollama(candidates, context)
+            elif self.backend == "chatgpt":
+                out = self._chatgpt(candidates, context)
             else:
                 out = None
         except Exception as e:  # never lose a dictation to a network hiccup
@@ -335,19 +339,27 @@ class Cleaner:
             out = None
         return vocab.apply_case((out or basic_cleanup(candidates[0])).strip(), words)
 
-    def _claude(self, candidates: list[str], context: str) -> "str | None":
-        resp = self._client.beta.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=SYSTEM_RU if self.lang == "ru" else SYSTEM,
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            messages=[{"role": "user", "content": _user_prompt(candidates, context, self._words, self._similar)}],
-        )
-        if resp.stop_reason == "refusal":
-            return None
-        return "".join(b.text for b in resp.content if b.type == "text") or None
+    def _ask(self, req: dict) -> dict:
+        """One request to the long-lived chatgpt.mjs helper (started on first use, restarted if it died)."""
+        with self._lock:
+            if self._proc is None or self._proc.poll() is not None:
+                self._proc = subprocess.Popen([self._node, CHATGPT_HELPER, self._host], stdin=subprocess.PIPE,
+                                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            self._proc.stdin.write(json.dumps(req) + "\n")
+            self._proc.stdin.flush()
+            line = self._proc.stdout.readline()
+        if not line:
+            raise RuntimeError("chatgpt helper exited")
+        reply = json.loads(line)
+        if "error" in reply:
+            raise RuntimeError(reply["error"])
+        return reply
+
+    def _chatgpt(self, candidates: list[str], context: str) -> "str | None":
+        reply = self._ask({"system": SYSTEM_RU if self.lang == "ru" else SYSTEM,
+                           "user": _user_prompt(candidates, context, self._words, self._similar),
+                           "model": os.environ.get("LIPFLOW_CHATGPT_MODEL"), "effort": "low"})
+        return strip_quotes(reply["text"].strip().split("\n")[0]) or None
 
     def _local(self, candidates: list[str], context: str) -> "str | None":
         from mlx_lm import generate
@@ -367,19 +379,6 @@ class Cleaner:
                                                          self.fuzzy):
             return None
         return fix_case(out)
-
-    def _ollama(self, candidates: list[str], context: str) -> "str | None":
-        r = requests.post("http://127.0.0.1:11434/api/chat", timeout=20, json={
-            "model": self.model,
-            "stream": False,
-            "think": False,
-            "messages": [{"role": "system", "content": SYSTEM_RU if self.lang == "ru" else SYSTEM},
-                         {"role": "user", "content": _user_prompt(candidates, context, self._words, self._similar)}],
-            "options": {"temperature": 0},
-        })
-        r.raise_for_status()
-        text = r.json()["message"]["content"]
-        return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip() or None
 
 
 if __name__ == "__main__":

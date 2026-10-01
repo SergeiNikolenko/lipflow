@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Wispr Flow, but for your lips: silent dictation from your webcam"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "anthropic>=0.40",
     "av>=18.1.0",
     "mediapipe==0.10.21",
     "mlx-lm>=0.31.3",

@@ -21,7 +21,7 @@ def main(argv=None):
     r = sub.add_parser("run", help="start the menu-bar dictation app (default)")
     r.add_argument("--key", default="right_option", choices=list(KEYS), help="push-to-talk key")
     r.add_argument("--beam", type=int, default=4, help="beam size (higher = slower, about the same accuracy)")
-    r.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic"])
+    r.add_argument("--cleanup", default="auto", choices=["auto", "chatgpt", "local", "basic"])
     r.add_argument("--camera", default="auto",
                    help="'auto' (the Mac's built-in camera), part of a camera's name, or a video file")
     r.add_argument("--copy-only", action="store_true", help="copy to the clipboard instead of pasting")
@@ -34,7 +34,7 @@ def main(argv=None):
     f.add_argument("--start", type=float, default=0.0)
     f.add_argument("--end", type=float, default=None)
     f.add_argument("--beam", type=int, default=10)
-    f.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic", "none"])
+    f.add_argument("--cleanup", default="auto", choices=["auto", "chatgpt", "local", "basic", "none"])
     f.add_argument("--lang", choices=["ru", "en"], default=None)
     f.add_argument("--audio", action="store_true", help="read lips + the clip's audio (Russian only)")
 

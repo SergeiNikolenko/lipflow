@@ -68,14 +68,16 @@ def make_icns(dest_icns: str):
 
 
 def build(dest_dir: str = "/Applications") -> str:
+    # Updated in place, never recreated: macOS ties the Accessibility / Input Monitoring grants of an
+    # unsigned bundle to the bundle it saw, so a fresh copy would silently lose them
     app = os.path.join(os.path.expanduser(dest_dir), "Lipflow.app")
-    if os.path.exists(app):
-        shutil.rmtree(app)
     macos = os.path.join(app, "Contents", "MacOS")
     res = os.path.join(app, "Contents", "Resources")
-    os.makedirs(macos)
-    os.makedirs(res)
-    make_icns(os.path.join(res, "Lipflow.icns"))
+    os.makedirs(macos, exist_ok=True)
+    os.makedirs(res, exist_ok=True)
+    icns = os.path.join(res, "Lipflow.icns")
+    if not os.path.exists(icns):
+        make_icns(icns)
     plistlib.dump({
         "CFBundleName": "Lipflow",
         "CFBundleDisplayName": "Lipflow",
@@ -100,7 +102,7 @@ def build(dest_dir: str = "/Applications") -> str:
 # Lipflow launcher: runs the checkout at {ROOT}
 cd "{ROOT}" || exit 1
 export PYTHONUNBUFFERED=1 LIPFLOW_APP=1
-# Optional settings for the app (e.g. ANTHROPIC_API_KEY=..., LIPFLOW_LANG=en): one VAR=value per line
+# Optional settings for the app (e.g. LIPFLOW_LANG=en): one VAR=value per line
 ENV_FILE="$HOME/Library/Application Support/Lipflow/env"
 [ -f "$ENV_FILE" ] && {{ set -a; . "$ENV_FILE"; set +a; }}
 exec "{ROOT}/.venv/bin/python" -m lipflow "$@" >> "{log}" 2>&1

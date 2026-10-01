@@ -38,6 +38,6 @@ def doctor() -> int:
     from .cleanup import Cleaner
     c = Cleaner()
     line(True, f"cleanup backend: {c.describe()}"
-         + ("  (set ANTHROPIC_API_KEY or run Ollama for much better accuracy)" if c.backend == "basic" else ""))
+         + ("  (sign in to the Lunori plugin for much better accuracy)" if c.backend == "basic" else ""))
     print("\nAll good." if ok else "\nFix the ✗ items above, then run `lipflow`.")
     return 0 if ok else 1

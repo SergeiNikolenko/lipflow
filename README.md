@@ -30,10 +30,9 @@ word for word. So for Russian:
   + audio; nothing extra is downloaded. When the mic hears only room noise, Lipflow falls back to lips.
 - Do the practice round (24 Russian sentences, more rounds help). Face training on the Russian model
   takes about 3 minutes on an M2 Pro.
-- For real sentence repair, give it Claude: put `ANTHROPIC_API_KEY=...` in
-  `~/Library/Application Support/Lipflow/env` (the app reads that file at launch). The default
-  on-device cleanup for Russian is Qwen3-1.7B (`LIPFLOW_LOCAL_MODEL` overrides it); it may only
-  make small, lip-lookalike spelling fixes.
+- Sentence repair goes to ChatGPT through the Lunori plugin's signed-in account (see below).
+  Without it, the on-device fallback for Russian is Qwen3-1.7B (`LIPFLOW_LOCAL_MODEL` overrides
+  it), which may only make small, lip-lookalike spelling fixes.
 
 Switch language with `LIPFLOW_LANG=en` (in the `env` file or your shell), `"language": "en"` in
 `~/Library/Application Support/Lipflow/settings.json`, or `uv run lipflow --lang en`. Test on a file:
@@ -88,15 +87,15 @@ model output reads like "WALLET OFFICER" when you said "while in office". Lipflo
 top-3 guesses plus your last few dictations to an LLM, which picks the sentence you meant and
 fixes casing, punctuation and numbers. The first backend that's available is used:
 
-1. **Claude**: `export ANTHROPIC_API_KEY=…` (model `claude-opus-5-5` at low effort; override with
-   `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency). Best at fixing badly
-   mis-read sentences.
-2. **Local** (the default without a key): Qwen3-0.6B 4-bit running in-process on Apple Silicon
+1. **ChatGPT**: used when the Lunori Codex plugin is installed and signed in, plus `node` on the
+   PATH. `lipflow/chatgpt.mjs` borrows Lunori's account client and calls the Responses API with your
+   ChatGPT plan at low effort, so there is no API key to manage (`LIPFLOW_CHATGPT_MODEL` picks
+   another model). Best at fixing badly mis-read sentences, a few seconds per sentence.
+2. **Local** (the fallback): Qwen3-0.6B 4-bit running in-process on Apple Silicon
    via MLX. About 350 MB, downloaded on first launch, and about 0.2 s per sentence, fully offline.
    Tiny models copy the formatting they're shown, so this one gets lowercase guesses and a few
    worked examples (`SMALL_SHOTS` in `cleanup.py`). Override with `LIPFLOW_LOCAL_MODEL`.
-3. **Ollama**: `--cleanup ollama` with `ollama pull qwen3:4b` (override with `LIPFLOW_OLLAMA_MODEL`).
-4. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
+3. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
 
 **Learn from your Wispr Flow history.** Most of what you'll mouth is stuff you already say.
 
@@ -131,7 +130,7 @@ Options: `uv run lipflow --help`
 
 ```
 --key {right_option,left_option,right_command,right_control,fn}
---cleanup {auto,claude,local,ollama,basic}
+--cleanup {auto,chatgpt,local,basic}
 --beam N          beam size (default 10)
 --copy-only       copy to the clipboard instead of pasting
 --camera N|FILE   camera index, or a video file to stand in for the webcam

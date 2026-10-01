@@ -391,6 +391,12 @@ class Lipflow(NSObject):
                 ru.download()
         self.reader = make_reader(self.lang, beam_size=self.opts.beam)
         self.reader.warmup()
+        if self.cleaner.backend == "chatgpt":
+            try:
+                self.cleaner.warmup()
+            except Exception as e:
+                print(f"[lipflow] ChatGPT cleanup unavailable ({e}); using the local model")
+                self.cleaner = Cleaner("local", lang=self.lang)
         if self.cleaner.backend == "local":
             ui(self.hud.set_text, "Loading the text-cleanup model…")
             try:
