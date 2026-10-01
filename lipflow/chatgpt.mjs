@@ -9,10 +9,16 @@ const host = process.argv[2];
 const { resolveModel, access } = await import(pathToFileURL(host + '/account.mjs'));
 const { consumeResponse } = await import(pathToFileURL(host + '/translator.mjs'));
 
+// Lunori's catalog lists only gpt-5.6-luna and swaps other names for it, but the account also
+// serves gpt-6-luna, so the catalog only supplies the account profile and the model is ours
+const MODEL = 'gpt-6-luna';
 const resolved = new Map();
 async function pick(model, effort) {
   const key = `${model || ''}/${effort}`;
-  if (!resolved.has(key)) resolved.set(key, await resolveModel(model || undefined, 'standard', effort));
+  if (!resolved.has(key)) {
+    const selected = await resolveModel(undefined, 'standard', effort);
+    resolved.set(key, { ...selected, model: model || MODEL, effort });
+  }
   return resolved.get(key);
 }
 

@@ -89,7 +89,7 @@ fixes casing, punctuation and numbers. The first backend that's available is use
 
 1. **ChatGPT**: used when the Lunori Codex plugin is installed and signed in, plus `node` on the
    PATH. `lipflow/chatgpt.mjs` borrows Lunori's account client and calls the Responses API with your
-   ChatGPT plan at low effort, so there is no API key to manage (`LIPFLOW_CHATGPT_MODEL` picks
+   ChatGPT plan (gpt-6-luna, low effort), so there is no API key to manage (`LIPFLOW_CHATGPT_MODEL` picks
    another model). Best at fixing badly mis-read sentences, a few seconds per sentence.
 2. **Local** (the fallback): Qwen3-0.6B 4-bit running in-process on Apple Silicon
    via MLX. About 350 MB, downloaded on first launch, and about 0.2 s per sentence, fully offline.
